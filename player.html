@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Аниме Плеер</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            overscroll-behavior-y: contain;
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            height: 0;
+            padding-bottom: 56.25%;
+            background: #000;
+            overflow: hidden;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        .video-container video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .brightness-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 4;
+            transition: opacity 0.1s linear;
+        }
+        
+        .controls-container, .top-controls {
+            position: absolute;
+            left: 0;
+            right: 0;
+            padding: 15px;
+            transition: opacity 0.3s ease;
+            z-index: 10;
+        }
+
+        .controls-container {
+            bottom: 0;
+            background: linear-gradient(transparent, rgba(0,0,0,0.8));
+        }
+        
+        .top-controls {
+            top: 0;
+            background: linear-gradient(rgba(0,0,0,0.8), transparent);
+        }
+        
+        .progress-container {
+            height: 5px;
+            background: rgba(255,255,255,0.3);
+            border-radius: 2.5px;
+            cursor: pointer;
+            margin-bottom: 15px; /* NEW: Changed from margin to margin-bottom */
+            position: relative;
+            transition: height 0.2s ease;
+        }
+
+        .progress-container:hover { height: 8px; }
+        
+        .progress-bar { background: #fff; width: 0%; z-index: 2; height: 100%; border-radius: 2.5px; position: absolute; top: 0; left: 0; }
+        .progress-buffer { background: rgba(255,255,255,0.5); width: 0%; z-index: 1; height: 100%; border-radius: 2.5px; position: absolute; top: 0; left: 0; }
+        
+        .control-button {
+            background: none; border: none; color: white;
+            cursor: pointer; display: flex; align-items: center;
+            transition: background 0.2s ease, transform 0.1s ease;
+        }
+        
+        .icon-button { /* NEW: For buttons with only an icon */
+             font-size: 18px; padding: 10px; border-radius: 50%;
+        }
+
+        .text-button { /* NEW: For buttons with text */
+            font-size: 14px; padding: 8px 12px; border-radius: 6px;
+        }
+        
+        .control-button:hover { background: rgba(255,255,255,0.2); }
+        .control-button:active { transform: scale(0.95); }
+        
+        .time-display { font-size: 14px; color: rgba(255,255,255,0.9); font-family: monospace; }
+        .hidden-controls { opacity: 0; pointer-events: none; }
+        
+        .play-pause-center {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.6); border-radius: 50%;
+            width: 70px; height: 70px; display: flex;
+            align-items: center; justify-content: center;
+            opacity: 0; transition: opacity 0.3s ease, transform 0.2s ease;
+            pointer-events: none; z-index: 5;
+        }
+        
+        .video-container.paused .play-pause-center { opacity: 1; pointer-events: auto; }
+        
+        .loading-spinner {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 40px; height: 40px;
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            display: none; z-index: 5;
+        }
+        
+        @keyframes spin { 0% { transform: translate(-50%, -50%) rotate(0deg); } 100% { transform: translate(-50%, -50%) rotate(360deg); } }
+
+        .menu-panel {
+            position: absolute; /* Position is now set by JS */
+            background: rgba(28, 28, 30, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 8px;
+            display: none;
+            z-index: 20;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            border: 1px solid rgba(255,255,255,0.1);
+            width: 300px;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+
+        .menu-option {
+            padding: 12px 14px;
+            color: white;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 15px;
+            transition: background 0.2s ease;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .menu-option:hover { background: rgba(255,255,255,0.1); }
+        .menu-option.active { background: rgba(255,255,255,0.2); color: white; }
+        
+        .seek-indicator, .gesture-indicator {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: white; background: rgba(0,0,0,0.6);
+            border-radius: 20px;
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; transition: opacity 0.5s ease;
+            pointer-events: none; z-index: 6;
+        }
+        .seek-indicator { width: 60px; height: 60px; font-size: 24px; border-radius: 50%;}
+        .gesture-indicator { padding: 10px 20px; font-size: 16px; z-index: 25; }
+        .gesture-indicator i { margin-right: 10px; }
+
+    </style>
+</head>
+<body class="bg-gray-900 min-h-screen flex items-center justify-center p-0 m-0">
+
+    <div class="w-full h-screen max-w-full">
+        <div class="video-container" id="videoContainer">
+            <video id="videoPlayer" poster="https://placehold.co/800x450/1a1a1a/ffffff?text=Аниме+Плеер" playsinline></video>
+            
+            <div class="brightness-overlay" id="brightnessOverlay"></div>
+            <div class="loading-spinner" id="loadingSpinner"></div>
+            <div class="play-pause-center" id="playPauseCenter"><i class="fas fa-play text-white text-3xl pl-1"></i></div>
+
+            <div class="seek-indicator" id="rewindIndicator"><i class="fas fa-undo"></i></div>
+            <div class="seek-indicator" id="forwardIndicator"><i class="fas fa-redo"></i></div>
+
+            <div class="gesture-indicator" id="volumeIndicator"><i class="fas fa-volume-up"></i><span>100%</span></div>
+            <div class="gesture-indicator" id="brightnessIndicator"><i class="fas fa-sun"></i><span>100%</span></div>
+            
+            <div class="top-controls flex items-center justify-between" id="topControls">
+                <button class="control-button icon-button" id="backButton"><i class="fas fa-arrow-left"></i></button>
+                <div class="text-white text-base font-medium truncate px-2" id="episodeTitle">Загрузка...</div>
+                <button class="control-button icon-button" id="settingsButton"><i class="fas fa-cog"></i></button>
+            </div>
+            
+            <div class="menu-panel" id="episodeMenu"></div>
+            <div class="menu-panel" id="audioMenu"></div>
+            
+            <div class="controls-container" id="controlsContainer">
+                <div class="progress-container" id="progressContainer">
+                    <div class="progress-buffer" id="progressBuffer"></div>
+                    <div class="progress-bar" id="progressBar"></div>
+                </div>
+                
+                <div class="flex items-center justify-between">
+                    <!-- NEW: Left controls group -->
+                    <div class="flex items-center space-x-3">
+                        <button class="control-button text-button" id="episodeButton">
+                            <i class="fas fa-layer-group mr-2"></i>Серии
+                        </button>
+                        <button class="control-button text-button" id="audioButton">
+                            <i class="fas fa-headphones mr-2"></i>Озвучка
+                        </button>
+                    </div>
+
+                    <!-- Right controls group -->
+                    <div class="flex items-center space-x-2">
+                        <div class="time-display">
+                            <span id="currentTime">00:00</span> / <span id="duration">00:00</span>
+                        </div>
+                        <button class="control-button icon-button" id="pipButton"><i class="fas fa-clone"></i></button>
+                        <button class="control-button icon-button fullscreen-button" id="fullscreenButton"><i class="fas fa-expand"></i></button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class AnimePlayer {
+            constructor() {
+                // Основные элементы
+                this.video = document.getElementById('videoPlayer');
+                this.videoContainer = document.getElementById('videoContainer');
+                
+                // Элементы управления
+                this.playPauseCenter = document.getElementById('playPauseCenter');
+                this.fullscreenButton = document.getElementById('fullscreenButton');
+                this.pipButton = document.getElementById('pipButton');
+                this.settingsButton = document.getElementById('settingsButton');
+                this.episodeButton = document.getElementById('episodeButton');
+                this.audioButton = document.getElementById('audioButton');
+                
+                // Дисплеи и индикаторы
+                this.episodeTitle = document.getElementById('episodeTitle');
+                this.currentTimeDisplay = document.getElementById('currentTime');
+                this.durationDisplay = document.getElementById('duration');
+                this.loadingSpinner = document.getElementById('loadingSpinner');
+                this.brightnessOverlay = document.getElementById('brightnessOverlay');
+                this.volumeIndicator = document.getElementById('volumeIndicator');
+                this.brightnessIndicator = document.getElementById('brightnessIndicator');
+                
+                // Панели и меню
+                this.controlsContainer = document.getElementById('controlsContainer');
+                this.topControls = document.getElementById('topControls');
+                this.episodeMenu = document.getElementById('episodeMenu');
+                this.audioMenu = document.getElementById('audioMenu');
+                
+                // Состояния и переменные
+                this.hideControlsTimeout = null;
+                this.isSwiping = false;
+                // ... (другие переменные состояния)
+
+                // Демонстрационные данные
+                this.animeData = {
+                    title: "Приключения Банни",
+                    episodes: [
+                        { id: 1, title: "Большое приключение начинается", sources: { rus: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4", jpn: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4" } },
+                        { id: 2, title: "Мечта слонов", sources: { rus: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4", jpn: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" } },
+                        { id: 3, title: "Для больших костров", sources: { rus: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", jpn: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" } },
+                    ],
+                    audioTracks: [
+                        { id: 'rus', title: 'Русская озвучка' },
+                        { id: 'jpn', title: 'Японский (оригинал)' }
+                    ]
+                };
+                this.currentEpisodeId = 1;
+                this.currentAudioId = 'rus';
+                
+                this.init();
+            }
+            
+            init() {
+                this.populateMenus();
+                this.setupEventListeners();
+                this.loadSettings();
+                this.loadVideo();
+                this.updatePlayButton();
+            }
+
+            populateMenus() {
+                this.episodeMenu.innerHTML = '';
+                this.animeData.episodes.forEach(ep => {
+                    const option = document.createElement('div');
+                    option.className = 'menu-option';
+                    option.textContent = `Эпизод ${ep.id}: ${ep.title}`;
+                    option.dataset.episodeId = ep.id;
+                    this.episodeMenu.appendChild(option);
+                });
+
+                this.audioMenu.innerHTML = '';
+                this.animeData.audioTracks.forEach(track => {
+                    const option = document.createElement('div');
+                    option.className = 'menu-option';
+                    option.textContent = track.title;
+                    option.dataset.audioId = track.id;
+                    this.audioMenu.appendChild(option);
+                });
+            }
+            
+            setupEventListeners() {
+                // ... (события видео)
+                this.video.addEventListener('loadedmetadata', () => this.handleLoadedMetadata());
+                this.video.addEventListener('timeupdate', () => this.handleTimeUpdate());
+                this.video.addEventListener('waiting', () => this.showLoading(true));
+                this.video.addEventListener('canplay', () => this.showLoading(false));
+                this.video.addEventListener('pause', () => this.updatePlayButton());
+                this.video.addEventListener('play', () => this.updatePlayButton());
+
+                // Управление
+                this.playPauseCenter.addEventListener('click', () => this.togglePlay());
+                this.fullscreenButton.addEventListener('click', () => this.toggleFullscreen());
+                this.pipButton.addEventListener('click', () => this.togglePiP());
+                document.getElementById('progressContainer').addEventListener('click', (e) => this.seekTo(e));
+
+                // Кнопки меню
+                this.episodeButton.addEventListener('click', (e) => { e.stopPropagation(); this.toggleMenu(this.episodeMenu, this.episodeButton); });
+                this.audioButton.addEventListener('click', (e) => { e.stopPropagation(); this.toggleMenu(this.audioMenu, this.audioButton); });
+
+                // Выбор в меню
+                this.episodeMenu.addEventListener('click', (e) => this.handleEpisodeSelect(e));
+                this.audioMenu.addEventListener('click', (e) => this.handleAudioSelect(e));
+
+                // Скрытие меню при клике вне
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.menu-panel')) {
+                        this.hideAllMenus();
+                    }
+                });
+
+                // Свайпы, клики, горячие клавиши
+                this.videoContainer.addEventListener('click', (e) => this.handleContainerClick(e));
+                this.videoContainer.addEventListener('touchstart', (e) => this.handleTouchStart(e), { passive: false });
+                this.videoContainer.addEventListener('touchmove', (e) => this.handleTouchMove(e), { passive: false });
+                this.videoContainer.addEventListener('touchend', (e) => this.handleTouchEnd(e));
+                document.addEventListener('keydown', (e) => this.handleKeyboardShortcuts(e));
+            }
+
+            handleEpisodeSelect(e) {
+                const target = e.target.closest('.menu-option');
+                if (target) {
+                    this.currentEpisodeId = parseInt(target.dataset.episodeId);
+                    this.loadVideo(true);
+                    this.hideAllMenus();
+                }
+            }
+            
+            handleAudioSelect(e) {
+                const target = e.target.closest('.menu-option');
+                if (target) {
+                    this.currentAudioId = target.dataset.audioId;
+                    this.loadVideo(true);
+                    this.hideAllMenus();
+                }
+            }
+
+            loadVideo(shouldPlay = false) {
+                const episode = this.animeData.episodes.find(ep => ep.id === this.currentEpisodeId);
+                if (!episode) return;
+
+                const videoSrc = episode.sources[this.currentAudioId];
+                if (!videoSrc) {
+                    this.currentAudioId = Object.keys(episode.sources)[0];
+                    this.loadVideo(shouldPlay);
+                    return;
+                }
+                
+                const currentTime = this.video.currentTime;
+                const isNewEpisode = this.video.src.split('/').pop() !== videoSrc.split('/').pop();
+
+                if (this.video.src !== videoSrc) {
+                    this.video.src = videoSrc;
+                    this.video.load();
+                    this.showLoading(true);
+
+                    this.video.addEventListener('loadedmetadata', () => {
+                        if (!isNewEpisode) this.video.currentTime = currentTime; 
+                        if (shouldPlay) this.video.play();
+                    }, { once: true });
+                }
+                
+                this.updateUI();
+                this.saveSettings();
+            }
+
+            updateUI() {
+                const episode = this.animeData.episodes.find(ep => ep.id === this.currentEpisodeId);
+                if (!episode) return;
+                this.episodeTitle.textContent = `${this.animeData.title} - Эпизод ${episode.id}`;
+                this.episodeMenu.querySelectorAll('.menu-option').forEach(el => el.classList.toggle('active', parseInt(el.dataset.episodeId) === this.currentEpisodeId));
+                this.audioMenu.querySelectorAll('.menu-option').forEach(el => el.classList.toggle('active', el.dataset.audioId === this.currentAudioId));
+            }
+
+            toggleMenu(menuElement, buttonElement) {
+                const isVisible = menuElement.style.display === 'block';
+                this.hideAllMenus();
+
+                if (!isVisible) {
+                    const buttonRect = buttonElement.getBoundingClientRect();
+                    const containerRect = this.videoContainer.getBoundingClientRect();
+                    menuElement.style.left = `${buttonRect.left - containerRect.left}px`;
+                    menuElement.style.bottom = `${containerRect.bottom - buttonRect.top + 8}px`; // +8px для отступа
+                    menuElement.style.display = 'block';
+                }
+            }
+
+            hideAllMenus() {
+                this.episodeMenu.style.display = 'none';
+                this.audioMenu.style.display = 'none';
+            }
+            
+            saveSettings() {
+                const settings = { episode: this.currentEpisodeId, audio: this.currentAudioId };
+                localStorage.setItem('anime_player_settings_v5', JSON.stringify(settings));
+            }
+
+            loadSettings() {
+                const settings = JSON.parse(localStorage.getItem('anime_player_settings_v5'));
+                if (settings) {
+                    this.currentEpisodeId = settings.episode || 1;
+                    this.currentAudioId = settings.audio || 'rus';
+                }
+            }
+            
+            // --- Остальные методы плеера (без изменений) ---
+            handleLoadedMetadata() { this.durationDisplay.textContent = this.formatTime(this.video.duration); this.showLoading(false); }
+            handleTimeUpdate() { this.progressBar.style.width = `${(this.video.currentTime / this.video.duration) * 100}%`; this.currentTimeDisplay.textContent = this.formatTime(this.video.currentTime); }
+            updatePlayButton() { const isPaused = this.video.paused; this.videoContainer.classList.toggle('paused', isPaused); const iconClass = isPaused ? 'fa-play' : 'fa-pause'; this.playPauseCenter.querySelector('i').className = `fas ${iconClass} text-white text-3xl ${isPaused ? 'pl-1' : ''}`; }
+            togglePlay() { this.video.paused ? this.video.play() : this.video.pause(); }
+            handleTouchStart(e) { if (e.target.closest('.controls-container, .top-controls, .menu-panel')) return; if (e.touches.length === 1) { this.swipeStartX = e.touches[0].clientX; this.swipeStartY = e.touches[0].clientY; this.isSwiping = true; } }
+            handleTouchMove(e) { if (!this.isSwiping || e.touches.length !== 1) return; e.preventDefault(); }
+            handleTouchEnd(e) { if (this.isSwiping) { this.isSwiping = false; } }
+            handleContainerClick(e) { if (e.target.closest('.controls-container, .top-controls, .menu-panel')) return; this.togglePlay(); }
+            handleKeyboardShortcuts(e) { if (e.target.tagName === 'INPUT') return; switch (e.key) { case ' ': e.preventDefault(); this.togglePlay(); break; case 'f': this.toggleFullscreen(); break; case 'm': this.video.muted = !this.video.muted; break; case 'ArrowRight': this.video.currentTime += 5; break; case 'ArrowLeft': this.video.currentTime -= 5; break; } }
+            showLoading(isLoading) { this.loadingSpinner.style.display = isLoading ? 'block' : 'none'; }
+            hideControls() { if (this.video.paused || this.episodeMenu.style.display === 'block' || this.audioMenu.style.display === 'block') return;[this.controlsContainer, this.topControls].forEach(el => el.classList.add('hidden-controls')); this.videoContainer.style.cursor = 'none'; }
+            seekTo(e) { const rect = e.currentTarget.getBoundingClientRect(); const pos = (e.clientX - rect.left) / rect.width; this.video.currentTime = pos * this.video.duration; }
+            toggleFullscreen() { if (!document.fullscreenElement) { this.videoContainer.requestFullscreen().catch(err => {}); } else { document.exitFullscreen(); } }
+            togglePiP() { if (document.pictureInPictureElement) { document.exitPictureInPicture(); } else if (document.pictureInPictureEnabled) { this.video.requestPictureInPicture(); } }
+            formatTime(time) { if (isNaN(time)) return '00:00'; const minutes = Math.floor(time / 60); const seconds = Math.floor(time % 60); return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`; }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            new AnimePlayer();
+        });
+    </script>
+
+</body>
+</html>
